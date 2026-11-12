@@ -136,7 +136,80 @@ button.default { border-color: #0067b8; }
 </style>
 </head>
 <body>
-<div id="unityContainer"><canvas id="unityCanvas" tabindex="-1"></canvas><div id="unityLoading"><div class="window" aria-label="Launching"><div class="title-bar"><div class="title-bar-text">Launching Kerbal Space Program</div></div><div class="window-body"><p id="unityLoadStatus">Connecting...</p><div role="progressbar" class="animate" id="unityProg"><div id="unityProgFill" style="width:0%"></div></div></div></div></div></div>
+<script>
+/* Text-field protection -----------------------------------------------------
+   Unity's WebGL player registers window-level keyboard handlers, and the game
+   canvas grabs focus on pointer/key events. Both live outside the CKAN page,
+   so keystrokes aimed at an HTML field (the mod list search, install box, ...)
+   were being consumed before the field saw them: the field dropped focus the
+   instant it was clicked and nothing could be typed. Capture-phase guards keep
+   keystrokes on the focused field and keep focus pinned to it.
+-------------------------------------------------------------------------- */
+(function () {
+  var TEXT_TYPES = ['text','search','email','url','tel','password','number','date','time','datetime-local','month','week'];
+  function isTextField(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.isContentEditable) return true;
+    var tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag !== 'INPUT') return false;
+    return TEXT_TYPES.indexOf((el.type || 'text').toLowerCase()) !== -1;
+  }
+  function fieldOf(node) {
+    while (node && node.nodeType === 1) {
+      if (isTextField(node)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+  var pinned = null, pinnedAt = 0;
+  function pin(el) { pinned = el; pinnedAt = Date.now(); }
+
+  // Keystrokes aimed at a field must reach only the field.
+  ['keydown','keyup','keypress','beforeinput','input','compositionstart','compositionupdate','compositionend'].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      var f = fieldOf(e.target);
+      if (!f) return;
+      pin(f);
+      e.stopImmediatePropagation();
+    }, true);
+  });
+
+  // A click inside a field wins the focus fight, whoever else wants it.
+  window.addEventListener('pointerdown', function (e) {
+    var f = fieldOf(e.target);
+    if (!f) return;
+    pin(f);
+    setTimeout(function () {
+      if (f.isConnected && document.activeElement !== f) {
+        try { f.focus({ preventScroll: true }); } catch (err) { f.focus(); }
+      }
+    }, 0);
+  }, true);
+
+  // If anything else (canvas, body, a stray blur()) takes focus right after the
+  // user clicked into a field, give it straight back.
+  document.addEventListener('focusin', function (e) {
+    if (!pinned || !pinned.isConnected) return;
+    if (e.target === pinned) return;
+    if (isTextField(e.target)) return;
+    if (Date.now() - pinnedAt > 1500) return;
+    try { pinned.focus({ preventScroll: true }); } catch (err) { pinned.focus(); }
+  }, true);
+
+  document.addEventListener('focusin', function (e) {
+    if (isTextField(e.target)) pin(e.target);
+  }, true);
+  document.addEventListener('focusout', function (e) {
+    if (e.target === pinned && !e.relatedTarget) setTimeout(function () {
+      if (pinned && pinned.isConnected && document.activeElement === document.body && Date.now() - pinnedAt < 1200) {
+        try { pinned.focus({ preventScroll: true }); } catch (err) { pinned.focus(); }
+      }
+    }, 0);
+  }, true);
+})();
+</script>
+<div id="unityContainer"><canvas id="unityCanvas" tabindex="0"></canvas><div id="unityLoading"><div class="window" aria-label="Launching"><div class="title-bar"><div class="title-bar-text">Launching Kerbal Space Program</div></div><div class="window-body"><p id="unityLoadStatus">Connecting...</p><div role="progressbar" class="animate" id="unityProg"><div id="unityProgFill" style="width:0%"></div></div></div></div></div></div>
 <div id="ckan">
   <ul class="menubar" role="menubar">
     <li role="menuitem" tabindex="0">File
@@ -999,6 +1072,7 @@ function startUnity() {
         loadBox.style.display = "none";
         unityInstance = instance;
         unityStarting = false;
+        try { if (typeof canvas.focus === "function") canvas.focus({ preventScroll: true }); } catch (e) { }
       }).catch(function (message) { bootError(message); });
     };
     script.onerror = function () { bootError("Could not load " + loaderUrl); };
