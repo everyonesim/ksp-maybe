@@ -348,6 +348,7 @@ var URLS = {
 URLS.netkanIssues = "https://github.com/KSP-CKAN/NetKAN/issues/new/choose";
 var GAME_VERSIONS = ["1.8.0","1.8.1","1.9.0","1.9.1","1.10.0","1.10.1","1.11.0","1.11.1","1.11.2","1.12.0","1.12.1","1.12.2","1.12.3","1.12.4","1.12.5"];
 var unityInstance = null;
+var unityStarting = false;
 var mods = [];
 var installed = Object.create(null);
 var autoInstalled = Object.create(null);
@@ -901,7 +902,8 @@ function runInstall() {
   step();
 }
 function startUnity() {
-  if (unityInstance) return;
+  if (unityInstance || unityStarting) return;
+  unityStarting = true;
   var ids = mods.filter(isInstalled).map(function (m) { return m.identifier; });
   try {
     var p = new URLSearchParams(location.search);
@@ -933,13 +935,58 @@ function startUnity() {
     productName: "Kerbal Space Program",
     productVersion: "1.12.4"
   };
+  // The 400 MB Unity .data file is stored in Git LFS. GitHub Pages only serves the
+  // 134-byte LFS pointer, which makes the player quit silently right after "100%"
+  // ("No GlobalGameManagers file was found... quitting player") and leaves a blank
+  // canvas. media.githubusercontent.com serves the real object with CORS enabled,
+  // so probe the candidates and use the first one that is actually the data file.
+  var DATA_CANDIDATES = [
+    "https://media.githubusercontent.com/media/everyonesim/ksp-maybe/main/Build/Build.data",
+    buildUrl + "/Build.data"
+  ];
+  function probeSize(url) {
+    return fetch(url, { method: "HEAD", cache: "no-store" }).then(function (r) {
+      if (!r.ok) return 0;
+      var len = parseInt(r.headers.get("Content-Length") || "0", 10);
+      return isNaN(len) ? 0 : len;
+    }).catch(function () { return 0; });
+  }
+  function dataSize(url) {
+    return probeSize(url).then(function (len) {
+      if (len > 0) return len;
+      // Hosts that reject HEAD: fall back to a one byte ranged GET.
+      return fetch(url, { method: "GET", headers: { Range: "bytes=0-0" }, cache: "no-store" }).then(function (r) {
+        if (!r.ok && r.status !== 206) return 0;
+        var cr = r.headers.get("Content-Range") || "";
+        var n = cr.indexOf("/") > -1 ? parseInt(cr.split("/")[1], 10) : 0;
+        try { if (r.body) r.body.cancel(); } catch (e) {}
+        return isNaN(n) ? 0 : n;
+      }).catch(function () { return 0; });
+    });
+  }
+  function pickDataUrl() {
+    var i = 0;
+    function attempt() {
+      if (i >= DATA_CANDIDATES.length) return Promise.resolve(null);
+      var url = DATA_CANDIDATES[i++];
+      return dataSize(url).then(function (len) { return len > 1048576 ? url : attempt(); });
+    }
+    return attempt();
+  }
   function bootError(message) {
+    unityStarting = false;
     loadBox.style.display = "none";
     cont.style.display = "none";
     $("ckan").style.display = "flex";
     showModal("Error", String(message), [{ label: "OK", primary: true }]);
   }
-  try {
+  pickDataUrl().then(function (dataUrl) {
+    if (!dataUrl) {
+      bootError("Could not find the game data file (Build/Build.data). It may still be uploading, or the Git LFS copy is missing.");
+      return;
+    }
+    config.dataUrl = dataUrl;
+    loadStatus.textContent = "Downloading game data...";
     var script = document.createElement("script");
     script.src = loaderUrl;
     script.onload = function () {
@@ -951,13 +998,14 @@ function startUnity() {
       }).then(function (instance) {
         loadBox.style.display = "none";
         unityInstance = instance;
+        unityStarting = false;
       }).catch(function (message) { bootError(message); });
     };
     script.onerror = function () { bootError("Could not load " + loaderUrl); };
     document.body.appendChild(script);
-  } catch (e) {
+  }).catch(function (e) {
     bootError(e && e.message || e);
-  }
+  });
 }
 function launchGame() {
   var pend = pendingChanges();
