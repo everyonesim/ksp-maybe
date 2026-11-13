@@ -168,8 +168,11 @@ button.default { border-color: #0067b8; }
     }
     return null;
   }
+  // KEYBOARD EVENTS ONLY. Stopping 'input'/'beforeinput' here would also stop
+  // the page's own listeners (renderRows is bound to 'input' on these very
+  // fields), which silently killed the search filtering.
   var lastField = null;
-  ['keydown','keyup','keypress','beforeinput','input','compositionstart','compositionupdate','compositionend'].forEach(function (type) {
+  ['keydown','keyup','keypress'].forEach(function (type) {
     window.addEventListener(type, function (e) {
       var f = fieldOf(e.target);
       if (!f) return;
