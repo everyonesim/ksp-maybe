@@ -1033,6 +1033,39 @@ function startUnity() {
       }).catch(function () { return 0; });
     });
   }
+  // The player data still carries the old port credit baked into its asset
+  // bundle. Patching that with a byte edit inside the 412 MB file is what broke
+  // the last build, so instead: fetch the data once, swap the 17 bytes in memory
+  // and hand Unity a blob URL. Any failure falls through to the raw file.
+  var CREDIT_OLD = "PORT BY CRACKERS";
+  var CREDIT_NEW = "BY EVERYBODYSIM ";
+  function patchCreditInData(url) {
+    if (typeof fetch !== "function" || !window.Blob || !window.URL || !URL.createObjectURL) return Promise.resolve(url);
+    loadStatus.textContent = "Preparing player data...";
+    return fetch(url, { cache: "force-cache" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.arrayBuffer();
+    }).then(function (buf) {
+      var bytes = new Uint8Array(buf);
+      var needle = new Uint8Array(CREDIT_OLD.length);
+      var repl = new Uint8Array(CREDIT_NEW.length);
+      for (var i = 0; i < CREDIT_OLD.length; i++) needle[i] = CREDIT_OLD.charCodeAt(i);
+      for (var i = 0; i < CREDIT_NEW.length; i++) repl[i] = CREDIT_NEW.charCodeAt(i);
+      var found = -1, from = 0;
+      while (from <= bytes.length - needle.length) {
+        var hit = bytes.indexOf(needle[0], from);
+        if (hit < 0 || hit > bytes.length - needle.length) break;
+        var ok = true;
+        for (var j = 1; j < needle.length; j++) { if (bytes[hit + j] !== needle[j]) { ok = false; break; } }
+        if (ok) { found = hit; break; }
+        from = hit + 1;
+      }
+      if (found < 0) return url;
+      bytes.set(repl, found);
+      window.__creditPatched = true;
+      return URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    }).catch(function () { return url; });
+  }
   function pickDataUrl() {
     var i = 0;
     function attempt() {
@@ -1054,11 +1087,12 @@ function startUnity() {
       bootError("Could not find the game data file (Build/Build.data). It may still be uploading, or the Git LFS copy is missing.");
       return;
     }
-    config.dataUrl = dataUrl;
-    loadStatus.textContent = "Downloading game data...";
-    var script = document.createElement("script");
-    script.src = loaderUrl;
-    script.onload = function () {
+    patchCreditInData(dataUrl).then(function (finalUrl) {
+      config.dataUrl = finalUrl;
+      loadStatus.textContent = "Downloading game data...";
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = function () {
       createUnityInstance(canvas, config, function (progress) {
         progBar.classList.remove("animate");
         var pct = Math.round(progress * 100);
@@ -1096,8 +1130,9 @@ function startUnity() {
         }, false);
       }).catch(function (message) { bootError(message); });
     };
-    script.onerror = function () { bootError("Could not load " + loaderUrl); };
-    document.body.appendChild(script);
+      script.onerror = function () { bootError("Could not load " + loaderUrl); };
+      document.body.appendChild(script);
+    });
   }).catch(function (e) {
     bootError(e && e.message || e);
   });
