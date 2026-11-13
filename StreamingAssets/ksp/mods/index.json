@@ -1,19 +1,20 @@
 {
  "version": 1,
  "defaultMods": [
-  "ztheme",
+  "backgroundthrust",
   "bettertimewarp",
-  "mechjeb2",
+  "eve",
   "kerbalengineer",
+  "mechjeb2",
   "trajectories",
-  "backgroundthrust"
+  "ztheme"
  ],
  "mods": [
   {
-   "id": "ztheme",
-   "title": "ZTheme",
-   "tier": "D",
-   "bytes": 1760985
+   "id": "backgroundthrust",
+   "title": "BackgroundThrust",
+   "tier": "A",
+   "bytes": 28510
   },
   {
    "id": "bettertimewarp",
@@ -22,10 +23,10 @@
    "bytes": 3677
   },
   {
-   "id": "mechjeb2",
-   "title": "MechJeb 2",
-   "tier": "B",
-   "bytes": 543446
+   "id": "eve",
+   "title": "Environmental Visual Enhancements (2D clouds)",
+   "tier": "A",
+   "bytes": 12717029
   },
   {
    "id": "kerbalengineer",
@@ -34,16 +35,22 @@
    "bytes": 481009
   },
   {
+   "id": "mechjeb2",
+   "title": "MechJeb 2",
+   "tier": "B",
+   "bytes": 543446
+  },
+  {
    "id": "trajectories",
    "title": "Trajectories",
    "tier": "A",
    "bytes": 45074
   },
   {
-   "id": "backgroundthrust",
-   "title": "BackgroundThrust",
-   "tier": "A",
-   "bytes": 28510
+   "id": "ztheme",
+   "title": "ZTheme",
+   "tier": "D",
+   "bytes": 1760985
   }
  ]
 }
