@@ -136,76 +136,7 @@ button.default { border-color: #0067b8; }
 </style>
 </head>
 <body>
-<script>
-/* Text-field protection -----------------------------------------------------
-   Keep keystrokes aimed at the launcher's own text fields (the mod list search,
-   install box, share link, ...) from being swallowed by the Unity player, which
-   installs window-level keyboard handlers and pulls focus to the game canvas.
-   SCOPE IS DELIBERATE: only fields inside #ckan are guarded. Unity's WebGL
-   player creates its own DOM input for in-game text fields and listens to that
-   element itself, so touching anything outside the launcher would break typing
-   inside the game.
--------------------------------------------------------------------------- */
-(function () {
-  var TEXT_TYPES = ['text','search','email','url','tel','password','number','date','time','datetime-local','month','week'];
-  function isTextInput(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (el.isContentEditable) return true;
-    var tag = el.tagName;
-    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    if (tag !== 'INPUT') return false;
-    return TEXT_TYPES.indexOf((el.type || 'text').toLowerCase()) !== -1;
-  }
-  function isLauncherField(el) {
-    if (!isTextInput(el)) return false;
-    var ckan = document.getElementById('ckan');
-    return !!(ckan && ckan.contains(el));
-  }
-  function fieldOf(node) {
-    while (node && node.nodeType === 1) {
-      if (isLauncherField(node)) return node;
-      node = node.parentNode;
-    }
-    return null;
-  }
-  // KEYBOARD EVENTS ONLY. Stopping 'input'/'beforeinput' here would also stop
-  // the page's own listeners (renderRows is bound to 'input' on these very
-  // fields), which silently killed the search filtering.
-  var lastField = null;
-  ['keydown','keyup','keypress'].forEach(function (type) {
-    window.addEventListener(type, function (e) {
-      var f = fieldOf(e.target);
-      if (!f) return;
-      lastField = f;
-      e.stopImmediatePropagation();
-    }, true);
-  });
-  // A click inside a launcher field wins the focus fight, whoever else wants it.
-  window.addEventListener('pointerdown', function (e) {
-    var f = fieldOf(e.target);
-    if (!f) return;
-    lastField = f;
-    setTimeout(function () {
-      if (f.isConnected && f.offsetParent !== null && document.activeElement !== f) {
-        try { f.focus({ preventScroll: true }); } catch (err) { f.focus(); }
-      }
-    }, 0);
-  }, true);
-  // Only the game canvas may not steal a launcher field's focus. Nothing else
-  // is contested, so typing never flickers between two holders.
-  document.addEventListener('focusin', function (e) {
-    if (!lastField || !lastField.isConnected) return;
-    if (e.target === lastField || isLauncherField(e.target)) return;
-    var canvas = document.getElementById('unityCanvas');
-    if (e.target !== canvas) return;
-    try { lastField.focus({ preventScroll: true }); } catch (err) { lastField.focus(); }
-  }, true);
-  document.addEventListener('focusin', function (e) {
-    if (isLauncherField(e.target)) lastField = e.target;
-  }, true);
-})();
-</script>
-<div id="unityContainer"><canvas id="unityCanvas" tabindex="0"></canvas><div id="unityLoading"><div class="window" aria-label="Launching"><div class="title-bar"><div class="title-bar-text">Launching Kerbal Space Program</div></div><div class="window-body"><p id="unityLoadStatus">Connecting...</p><div role="progressbar" class="animate" id="unityProg"><div id="unityProgFill" style="width:0%"></div></div></div></div></div></div>
+<div id="unityContainer"><canvas id="unityCanvas" tabindex="-1"></canvas><div id="unityLoading"><div class="window" aria-label="Launching"><div class="title-bar"><div class="title-bar-text">Launching Kerbal Space Program</div></div><div class="window-body"><p id="unityLoadStatus">Connecting...</p><div role="progressbar" class="animate" id="unityProg"><div id="unityProgFill" style="width:0%"></div></div></div></div></div></div>
 <div id="ckan">
   <ul class="menubar" role="menubar">
     <li role="menuitem" tabindex="0">File
@@ -1068,32 +999,6 @@ function startUnity() {
         loadBox.style.display = "none";
         unityInstance = instance;
         unityStarting = false;
-        try { if (typeof canvas.focus === "function") canvas.focus({ preventScroll: true }); } catch (e) { }
-        // F9 dumps the game's own KSP.log straight out of the player's virtual
-        // filesystem. Rendering complaints (white surfaces, missing lightmaps,
-        // shader warnings) only ever show up in that log, so this is the one
-        // click that tells us what the player is actually failing on.
-        window.addEventListener("keydown", function (e) {
-          if (e.key !== "F9") return;
-          var txt = null;
-          try {
-            var FS = (instance && instance.Module && instance.Module.FS) || window.FS;
-            if (FS) {
-              ["/KSP.log", "/ksp/KSP.log", "/KSP.log.txt"].some(function (p) {
-                try { txt = FS.readFile(p, { encoding: "utf8" }); return !!txt; } catch (err) { return false; }
-              });
-            }
-          } catch (err) { }
-          if (!txt) {
-            loadStatus.textContent = "No KSP.log found in the player filesystem yet.";
-            return;
-          }
-          var a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
-          a.download = "KSP.log";
-          a.click();
-          setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-        }, false);
       }).catch(function (message) { bootError(message); });
     };
     script.onerror = function () { bootError("Could not load " + loaderUrl); };
