@@ -138,16 +138,17 @@ button.default { border-color: #0067b8; }
 <body>
 <script>
 /* Text-field protection -----------------------------------------------------
-   Unity's WebGL player registers window-level keyboard handlers, and the game
-   canvas grabs focus on pointer/key events. Both live outside the CKAN page,
-   so keystrokes aimed at an HTML field (the mod list search, install box, ...)
-   were being consumed before the field saw them: the field dropped focus the
-   instant it was clicked and nothing could be typed. Capture-phase guards keep
-   keystrokes on the focused field and keep focus pinned to it.
+   Keep keystrokes aimed at the launcher's own text fields (the mod list search,
+   install box, share link, ...) from being swallowed by the Unity player, which
+   installs window-level keyboard handlers and pulls focus to the game canvas.
+   SCOPE IS DELIBERATE: only fields inside #ckan are guarded. Unity's WebGL
+   player creates its own DOM input for in-game text fields and listens to that
+   element itself, so touching anything outside the launcher would break typing
+   inside the game.
 -------------------------------------------------------------------------- */
 (function () {
   var TEXT_TYPES = ['text','search','email','url','tel','password','number','date','time','datetime-local','month','week'];
-  function isTextField(el) {
+  function isTextInput(el) {
     if (!el || el.nodeType !== 1) return false;
     if (el.isContentEditable) return true;
     var tag = el.tagName;
@@ -155,57 +156,49 @@ button.default { border-color: #0067b8; }
     if (tag !== 'INPUT') return false;
     return TEXT_TYPES.indexOf((el.type || 'text').toLowerCase()) !== -1;
   }
+  function isLauncherField(el) {
+    if (!isTextInput(el)) return false;
+    var ckan = document.getElementById('ckan');
+    return !!(ckan && ckan.contains(el));
+  }
   function fieldOf(node) {
     while (node && node.nodeType === 1) {
-      if (isTextField(node)) return node;
+      if (isLauncherField(node)) return node;
       node = node.parentNode;
     }
     return null;
   }
-  var pinned = null, pinnedAt = 0;
-  function pin(el) { pinned = el; pinnedAt = Date.now(); }
-
-  // Keystrokes aimed at a field must reach only the field.
+  var lastField = null;
   ['keydown','keyup','keypress','beforeinput','input','compositionstart','compositionupdate','compositionend'].forEach(function (type) {
     window.addEventListener(type, function (e) {
       var f = fieldOf(e.target);
       if (!f) return;
-      pin(f);
+      lastField = f;
       e.stopImmediatePropagation();
     }, true);
   });
-
-  // A click inside a field wins the focus fight, whoever else wants it.
+  // A click inside a launcher field wins the focus fight, whoever else wants it.
   window.addEventListener('pointerdown', function (e) {
     var f = fieldOf(e.target);
     if (!f) return;
-    pin(f);
+    lastField = f;
     setTimeout(function () {
-      if (f.isConnected && document.activeElement !== f) {
+      if (f.isConnected && f.offsetParent !== null && document.activeElement !== f) {
         try { f.focus({ preventScroll: true }); } catch (err) { f.focus(); }
       }
     }, 0);
   }, true);
-
-  // If anything else (canvas, body, a stray blur()) takes focus right after the
-  // user clicked into a field, give it straight back.
+  // Only the game canvas may not steal a launcher field's focus. Nothing else
+  // is contested, so typing never flickers between two holders.
   document.addEventListener('focusin', function (e) {
-    if (!pinned || !pinned.isConnected) return;
-    if (e.target === pinned) return;
-    if (isTextField(e.target)) return;
-    if (Date.now() - pinnedAt > 1500) return;
-    try { pinned.focus({ preventScroll: true }); } catch (err) { pinned.focus(); }
+    if (!lastField || !lastField.isConnected) return;
+    if (e.target === lastField || isLauncherField(e.target)) return;
+    var canvas = document.getElementById('unityCanvas');
+    if (e.target !== canvas) return;
+    try { lastField.focus({ preventScroll: true }); } catch (err) { lastField.focus(); }
   }, true);
-
   document.addEventListener('focusin', function (e) {
-    if (isTextField(e.target)) pin(e.target);
-  }, true);
-  document.addEventListener('focusout', function (e) {
-    if (e.target === pinned && !e.relatedTarget) setTimeout(function () {
-      if (pinned && pinned.isConnected && document.activeElement === document.body && Date.now() - pinnedAt < 1200) {
-        try { pinned.focus({ preventScroll: true }); } catch (err) { pinned.focus(); }
-      }
-    }, 0);
+    if (isLauncherField(e.target)) lastField = e.target;
   }, true);
 })();
 </script>
