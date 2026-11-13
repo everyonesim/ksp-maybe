@@ -1069,6 +1069,31 @@ function startUnity() {
         unityInstance = instance;
         unityStarting = false;
         try { if (typeof canvas.focus === "function") canvas.focus({ preventScroll: true }); } catch (e) { }
+        // F9 dumps the game's own KSP.log straight out of the player's virtual
+        // filesystem. Rendering complaints (white surfaces, missing lightmaps,
+        // shader warnings) only ever show up in that log, so this is the one
+        // click that tells us what the player is actually failing on.
+        window.addEventListener("keydown", function (e) {
+          if (e.key !== "F9") return;
+          var txt = null;
+          try {
+            var FS = (instance && instance.Module && instance.Module.FS) || window.FS;
+            if (FS) {
+              ["/KSP.log", "/ksp/KSP.log", "/KSP.log.txt"].some(function (p) {
+                try { txt = FS.readFile(p, { encoding: "utf8" }); return !!txt; } catch (err) { return false; }
+              });
+            }
+          } catch (err) { }
+          if (!txt) {
+            loadStatus.textContent = "No KSP.log found in the player filesystem yet.";
+            return;
+          }
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
+          a.download = "KSP.log";
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+        }, false);
       }).catch(function (message) { bootError(message); });
     };
     script.onerror = function () { bootError("Could not load " + loaderUrl); };
